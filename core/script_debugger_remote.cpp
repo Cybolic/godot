@@ -34,7 +34,11 @@
 Error ScriptDebuggerRemote::connect_to_host(const String& p_host,uint16_t p_port) {
 
 
-    IP_Address ip = IP::get_singleton()->resolve_hostname(p_host);
+    IP_Address ip;
+    if (p_host.is_valid_ip_address())
+	    ip=p_host;
+    else
+	    ip = IP::get_singleton()->resolve_hostname(p_host);
 
 
     int port = p_port;
@@ -243,6 +247,15 @@ void ScriptDebuggerRemote::debug(ScriptLanguage *p_script,bool p_can_continue) {
 
 				if (request_scene_tree)
 					request_scene_tree(request_scene_tree_ud);
+
+			} else if (command=="breakpoint") {
+
+				bool set = cmd[3];
+				if (set)
+					insert_breakpoint(cmd[2],cmd[1]);
+				else
+					remove_breakpoint(cmd[2],cmd[1]);
+
 			} else {
 				_parse_live_edit(cmd);
 			}
@@ -518,6 +531,13 @@ void ScriptDebuggerRemote::_poll_events() {
 
 			if (request_scene_tree)
 				request_scene_tree(request_scene_tree_ud);
+		} else if (command=="breakpoint") {
+
+			bool set = cmd[3];
+			if (set)
+				insert_breakpoint(cmd[2],cmd[1]);
+			else
+				remove_breakpoint(cmd[2],cmd[1]);
 		} else {
 			_parse_live_edit(cmd);
 		}

@@ -59,7 +59,6 @@ class EditorLog : public PanelContainer {
 
 	Thread::ID current;
 
-
 //	void _dragged(const Point2& p_ofs);
 	void _close_request();
 	void _flip_request();
@@ -75,6 +74,7 @@ public:
 	void deinit();
 
 	ToolButton *get_button();
+	void clear();
 	EditorLog();
 	~EditorLog();
 };
