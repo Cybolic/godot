@@ -5,7 +5,7 @@ import sys
 
 def is_active():
 	return True
-	
+
 def get_name():
 	return "OSX"
 
@@ -31,7 +31,6 @@ def get_flags():
 	('opengl', 'no'),
 	('legacygl', 'yes'),
 	('builtin_zlib', 'no'),
-        ("theora","no"),       	
 	('freetype','builtin'), #use builtin freetype
 	]
 
@@ -117,4 +116,4 @@ def configure(env):
 	env.Append( BUILDERS = { 'GLSL120GLES' : env.Builder(action = methods.build_gles2_headers, suffix = 'glsl.h',src_suffix = '.glsl') } )
 	#env.Append( BUILDERS = { 'HLSL9' : env.Builder(action = methods.build_hlsl_dx9_headers, suffix = 'hlsl.h',src_suffix = '.hlsl') } )
 
-
+	env["x86_opt_gcc"]=True

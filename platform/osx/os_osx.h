@@ -5,7 +5,7 @@
 /*                           GODOT ENGINE                                */
 /*                    http://www.godotengine.org                         */
 /*************************************************************************/
-/* Copyright (c) 2007-2015 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2007-2016 Juan Linietsky, Ariel Manzur.                 */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -32,7 +32,7 @@
 
 #include "os/input.h"
 #include "drivers/unix/os_unix.h"
-
+#include "main/input_default.h"
 #include "servers/visual_server.h"
 #include "servers/visual/visual_server_wrap_mt.h"
 #include "servers/visual/rasterizer.h"
@@ -138,7 +138,7 @@ public:
 	virtual Point2 get_mouse_pos() const;
 	virtual int get_mouse_button_state() const;
 	virtual void set_window_title(const String& p_title);
-	
+
 	virtual Size2 get_window_size() const;
 
 	virtual void set_icon(const Image& p_icon);
@@ -156,6 +156,8 @@ public:
 
 	Error shell_open(String p_uri);
 	void push_input(const InputEvent& p_event);
+
+	String get_locale() const;
 
 	virtual void set_video_mode(const VideoMode& p_video_mode,int p_screen=0);
 	virtual VideoMode get_video_mode(int p_screen=0) const;
@@ -182,7 +184,7 @@ public:
 	virtual bool is_window_minimized() const;
 	virtual void set_window_maximized(bool p_enabled);
 	virtual bool is_window_maximized() const;
-	Size2 get_screen_size(int p_screen);
+	Size2 get_screen_size(int p_screen=0) const;
 
 
 	void run();

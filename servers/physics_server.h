@@ -5,7 +5,7 @@
 /*                           GODOT ENGINE                                */
 /*                    http://www.godotengine.org                         */
 /*************************************************************************/
-/* Copyright (c) 2007-2015 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2007-2016 Juan Linietsky, Ariel Manzur.                 */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -170,7 +170,7 @@ public:
 		int shape;
 	};
 
-	virtual bool intersect_ray(const Vector3& p_from, const Vector3& p_to,RayResult &r_result,const Set<RID>& p_exclude=Set<RID>(),uint32_t p_layer_mask=0xFFFFFFFF,uint32_t p_object_type_mask=TYPE_MASK_COLLISION)=0;
+	virtual bool intersect_ray(const Vector3& p_from, const Vector3& p_to,RayResult &r_result,const Set<RID>& p_exclude=Set<RID>(),uint32_t p_layer_mask=0xFFFFFFFF,uint32_t p_object_type_mask=TYPE_MASK_COLLISION,bool p_pick_ray=false)=0;
 
 	struct ShapeResult {
 
@@ -286,6 +286,9 @@ public:
 	// this function only works on fixed process, errors and returns null otherwise
 	virtual PhysicsDirectSpaceState* space_get_direct_state(RID p_space)=0;
 
+	virtual void space_set_debug_contacts(RID p_space,int p_max_contacts)=0;
+	virtual Vector<Vector3> space_get_contacts(RID p_space) const=0;
+	virtual int space_get_contact_count(RID p_space) const=0;
 
 	//missing space parameters
 
@@ -315,7 +318,9 @@ public:
 	enum AreaSpaceOverrideMode {
 		AREA_SPACE_OVERRIDE_DISABLED,
 		AREA_SPACE_OVERRIDE_COMBINE,
+		AREA_SPACE_OVERRIDE_COMBINE_REPLACE,
 		AREA_SPACE_OVERRIDE_REPLACE,
+		AREA_SPACE_OVERRIDE_REPLACE_COMBINE
 	};
 
 	virtual void area_set_space_override_mode(RID p_area, AreaSpaceOverrideMode p_mode)=0;
@@ -340,6 +345,9 @@ public:
 
 	virtual Variant area_get_param(RID p_parea,AreaParameter p_param) const=0;
 	virtual Transform area_get_transform(RID p_area) const=0;
+
+	virtual void area_set_collision_mask(RID p_area,uint32_t p_mask)=0;
+	virtual void area_set_layer_mask(RID p_area,uint32_t p_mask)=0;
 
 	virtual void area_set_monitorable(RID p_area,bool p_monitorable)=0;
 
@@ -367,7 +375,7 @@ public:
 	virtual RID body_get_space(RID p_body) const=0;
 
 	virtual void body_set_mode(RID p_body, BodyMode p_mode)=0;
-	virtual BodyMode body_get_mode(RID p_body, BodyMode p_mode) const=0;
+	virtual BodyMode body_get_mode(RID p_body) const=0;
 
 	virtual void body_add_shape(RID p_body, RID p_shape, const Transform& p_transform=Transform())=0;
 	virtual void body_set_shape(RID p_body, int p_shape_idx,RID p_shape)=0;
@@ -391,6 +399,9 @@ public:
 
 	virtual void body_set_layer_mask(RID p_body, uint32_t p_mask)=0;
 	virtual uint32_t body_get_layer_mask(RID p_body, uint32_t p_mask) const=0;
+
+	virtual void body_set_collision_mask(RID p_body, uint32_t p_mask)=0;
+	virtual uint32_t body_get_collision_mask(RID p_body, uint32_t p_mask) const=0;
 
 	virtual void body_set_user_flags(RID p_body, uint32_t p_flags)=0;
 	virtual uint32_t body_get_user_flags(RID p_body, uint32_t p_flags) const=0;
@@ -416,7 +427,7 @@ public:
 		BODY_STATE_LINEAR_VELOCITY,
 		BODY_STATE_ANGULAR_VELOCITY,
 		BODY_STATE_SLEEPING,
-		BODY_STATE_CAN_SLEEP			
+		BODY_STATE_CAN_SLEEP
 	};
 
 	virtual void body_set_state(RID p_body, BodyState p_state, const Variant& p_variant)=0;
@@ -643,7 +654,7 @@ public:
 	virtual void damped_string_joint_set_param(RID p_joint, DampedStringParam p_param, real_t p_value)=0;
 	virtual real_t damped_string_joint_get_param(RID p_joint, DampedStringParam p_param) const=0;
 
-	virtual JointType joint_get_type(RID p_joint) const=0;	
+	virtual JointType joint_get_type(RID p_joint) const=0;
 #endif
 	/* QUERY API */
 

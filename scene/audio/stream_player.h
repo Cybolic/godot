@@ -5,7 +5,7 @@
 /*                           GODOT ENGINE                                */
 /*                    http://www.godotengine.org                         */
 /*************************************************************************/
-/* Copyright (c) 2007-2015 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2007-2016 Juan Linietsky, Ariel Manzur.                 */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -37,7 +37,7 @@ class StreamPlayer : public Node {
 
 	OBJ_TYPE(StreamPlayer,Node);
 
-	_THREAD_SAFE_CLASS_
+	//_THREAD_SAFE_CLASS_
 
 	struct InternalStream : public AudioServer::AudioStream {
 		StreamPlayer *player;
@@ -66,6 +66,8 @@ class StreamPlayer : public Node {
 	float volume;
 	float loop_point;
 	int buffering_ms;
+	volatile bool stop_request;
+	float resume_pos;
 
 	AudioRBResampler resampler;
 

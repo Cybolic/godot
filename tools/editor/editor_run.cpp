@@ -5,7 +5,7 @@
 /*                           GODOT ENGINE                                */
 /*                    http://www.godotengine.org                         */
 /*************************************************************************/
-/* Copyright (c) 2007-2015 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2007-2016 Juan Linietsky, Ariel Manzur.                 */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -61,6 +61,13 @@ Error EditorRun::run(const String& p_scene,const String p_custom_args,const List
 		}
 	}
 
+	if (debug_collisions) {
+		args.push_back("-debugcol");
+	}
+
+	if (debug_navigation) {
+		args.push_back("-debugnav");
+	}
 
 	int screen = EditorSettings::get_singleton()->get("game_window_placement/screen");
 
@@ -169,7 +176,31 @@ void EditorRun::stop() {
 	status=STATUS_STOP;
 }
 
+void EditorRun::set_debug_collisions(bool p_debug) {
+
+	debug_collisions=p_debug;
+}
+
+bool EditorRun::get_debug_collisions() const{
+
+	return debug_collisions;
+}
+
+void EditorRun::set_debug_navigation(bool p_debug) {
+
+	debug_navigation=p_debug;
+}
+
+bool EditorRun::get_debug_navigation() const{
+
+	return debug_navigation;
+}
+
+
 EditorRun::EditorRun() {
 
 	status=STATUS_STOP;
+	debug_collisions=false;
+	debug_navigation=false;
+
 }

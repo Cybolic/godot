@@ -5,7 +5,7 @@
 /*                           GODOT ENGINE                                */
 /*                    http://www.godotengine.org                         */
 /*************************************************************************/
-/* Copyright (c) 2007-2015 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2007-2016 Juan Linietsky, Ariel Manzur.                 */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -38,6 +38,7 @@
 
 #include "core/globals.h"
 #include "emscripten.h"
+#include "dom_keys.h"
 
 int OS_JavaScript::get_video_driver_count() const {
 
@@ -74,6 +75,73 @@ void OS_JavaScript::set_opengl_extensions(const char* p_gl_extensions) {
 
 	ERR_FAIL_COND(!p_gl_extensions);
 	gl_extensions=p_gl_extensions;
+}
+
+static InputEvent _setup_key_event(const EmscriptenKeyboardEvent *emscripten_event) {
+
+	InputEvent ev;
+	ev.type = InputEvent::KEY;
+	ev.key.echo = emscripten_event->repeat;
+	ev.key.mod.alt = emscripten_event->altKey;
+	ev.key.mod.shift = emscripten_event->shiftKey;
+	ev.key.mod.control = emscripten_event->ctrlKey;
+	ev.key.mod.meta = emscripten_event->metaKey;
+	ev.key.scancode = dom2godot_scancode(emscripten_event->keyCode);
+
+	String unicode = String::utf8(emscripten_event->key);
+	if (unicode.length()!=1) {
+		unicode = String::utf8(emscripten_event->charValue);
+	}
+	if (unicode.length()==1) {
+		ev.key.unicode=unicode[0];
+	}
+
+	return ev;
+}
+
+static InputEvent deferred_key_event;
+
+static EM_BOOL _keydown_callback(int event_type, const EmscriptenKeyboardEvent *key_event, void *user_data) {
+
+	ERR_FAIL_COND_V(event_type!=EMSCRIPTEN_EVENT_KEYDOWN, false);
+
+	InputEvent ev = _setup_key_event(key_event);
+	ev.key.pressed = true;
+	if (ev.key.unicode==0 && keycode_has_unicode(ev.key.scancode)) {
+		// defer to keypress event for legacy unicode retrieval
+		deferred_key_event = ev;
+		return false; // do not suppress keypress event
+	}
+	static_cast<OS_JavaScript*>(user_data)->push_input(ev);
+	return true;
+}
+
+static EM_BOOL _keypress_callback(int event_type, const EmscriptenKeyboardEvent *key_event, void *user_data) {
+
+	ERR_FAIL_COND_V(event_type!=EMSCRIPTEN_EVENT_KEYPRESS, false);
+
+	deferred_key_event.key.unicode = key_event->charCode;
+	static_cast<OS_JavaScript*>(user_data)->push_input(deferred_key_event);
+	return true;
+}
+
+static EM_BOOL _keyup_callback(int event_type, const EmscriptenKeyboardEvent *key_event, void *user_data) {
+
+	ERR_FAIL_COND_V(event_type!=EMSCRIPTEN_EVENT_KEYUP, false);
+
+	InputEvent ev = _setup_key_event(key_event);
+	ev.key.pressed = false;
+	static_cast<OS_JavaScript*>(user_data)->push_input(ev);
+	return ev.key.scancode!=KEY_UNKNOWN && ev.key.scancode!=0;
+
+}
+
+static EM_BOOL joy_callback_func(int p_type, const EmscriptenGamepadEvent *p_event, void *p_user) {
+	OS_JavaScript *os = (OS_JavaScript*) OS::get_singleton();
+	if (os) {
+		return os->joy_connection_changed(p_type, p_event);
+	}
+	return false;
 }
 
 void OS_JavaScript::initialize(const VideoMode& p_desired,int p_video_driver,int p_audio_driver) {
@@ -142,6 +210,26 @@ void OS_JavaScript::initialize(const VideoMode& p_desired,int p_video_driver,int
 
 	input = memnew( InputDefault );
 
+	EMSCRIPTEN_RESULT result = emscripten_set_keydown_callback(NULL, this , true, &_keydown_callback);
+	if (result!=EMSCRIPTEN_RESULT_SUCCESS) {
+		ERR_PRINTS( "Error while setting Emscripten keydown callback: Code " + itos(result) );
+	}
+	result = emscripten_set_keypress_callback(NULL, this, true, &_keypress_callback);
+	if (result!=EMSCRIPTEN_RESULT_SUCCESS) {
+		ERR_PRINTS( "Error while setting Emscripten keypress callback: Code " + itos(result) );
+	}
+	result = emscripten_set_keyup_callback(NULL, this, true, &_keyup_callback);
+	if (result!=EMSCRIPTEN_RESULT_SUCCESS) {
+		ERR_PRINTS( "Error while setting Emscripten keyup callback: Code " + itos(result) );
+	}
+	result = emscripten_set_gamepadconnected_callback(NULL, true, &joy_callback_func);
+	if (result!=EMSCRIPTEN_RESULT_SUCCESS) {
+		ERR_PRINTS( "Error while setting Emscripten gamepadconnected callback: Code " + itos(result) );
+	}
+	result = emscripten_set_gamepaddisconnected_callback(NULL, true, &joy_callback_func);
+	if (result!=EMSCRIPTEN_RESULT_SUCCESS) {
+		ERR_PRINTS( "Error while setting Emscripten gamepaddisconnected callback: Code " + itos(result) );
+	}
 }
 
 void OS_JavaScript::set_main_loop( MainLoop * p_main_loop ) {
@@ -296,7 +384,7 @@ bool OS_JavaScript::main_loop_iterate() {
 
 
 	}
-
+	process_joysticks();
 	return Main::iteration();
 }
 
@@ -605,6 +693,62 @@ void OS_JavaScript::_close_notification_funcs(const String& p_file,int p_flags) 
 	}
 }
 
+void OS_JavaScript::process_joysticks() {
+
+	int joy_count = emscripten_get_num_gamepads();
+	for (int i = 0; i < joy_count; i++) {
+		EmscriptenGamepadEvent state;
+		emscripten_get_gamepad_status(i, &state);
+		if (state.connected) {
+
+			int num_buttons = MIN(state.numButtons, 18);
+			int num_axes = MIN(state.numAxes, 8);
+			for (int j = 0; j < num_buttons; j++) {
+
+				float value = state.analogButton[j];
+				if (String(state.mapping) == "standard" && (j == 6 || j == 7)) {
+					InputDefault::JoyAxis jx;
+					jx.min = 0;
+					jx.value = value;
+					last_id = input->joy_axis(last_id, i, j, jx);
+				}
+				else {
+					last_id = input->joy_button(last_id, i, j, value);
+				}
+			}
+			for (int j = 0; j < num_axes; j++) {
+
+				InputDefault::JoyAxis jx;
+				jx.min = -1;
+				jx.value = state.axis[j];
+				last_id = input->joy_axis(last_id, i, j, jx);
+			}
+		}
+	}
+}
+
+bool OS_JavaScript::joy_connection_changed(int p_type, const EmscriptenGamepadEvent *p_event) {
+	if (p_type == EMSCRIPTEN_EVENT_GAMEPADCONNECTED) {
+
+		String guid = "";
+		if (String(p_event->mapping) == "standard")
+			guid = "Default HTML5 Gamepad";
+		input->joy_connection_changed(p_event->index, true, String(p_event->id), guid);
+	}
+	else {
+		input->joy_connection_changed(p_event->index, false, "");
+	}
+	return true;
+}
+
+bool OS_JavaScript::is_joy_known(int p_device) {
+	return input->is_joy_mapped(p_device);
+}
+
+String OS_JavaScript::get_joy_guid(int p_device) const {
+	return input->get_joy_guid_remapped(p_device);
+}
+
 OS_JavaScript::OS_JavaScript(GFXInitFunc p_gfx_init_func,void*p_gfx_init_ud, OpenURIFunc p_open_uri_func, GetDataDirFunc p_get_data_dir_func,GetLocaleFunc p_get_locale_func) {
 
 
@@ -626,8 +770,6 @@ OS_JavaScript::OS_JavaScript(GFXInitFunc p_gfx_init_func,void*p_gfx_init_ud, Ope
 	FileAccessUnix::close_notification_func=_close_notification_funcs;
 
 	time_to_save_sync=-1;
-
-
 }
 
 OS_JavaScript::~OS_JavaScript() {

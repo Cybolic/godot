@@ -5,7 +5,7 @@
 /*                           GODOT ENGINE                                */
 /*                    http://www.godotengine.org                         */
 /*************************************************************************/
-/* Copyright (c) 2007-2015 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2007-2016 Juan Linietsky, Ariel Manzur.                 */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -39,6 +39,11 @@ class PhysicsBody : public CollisionObject {
 	OBJ_TYPE(PhysicsBody,CollisionObject);
 
 	uint32_t layer_mask;
+	uint32_t collision_mask;
+
+	void _set_layers(uint32_t p_mask);
+	uint32_t _get_layers() const;
+
 protected:
 
 	static void _bind_methods();
@@ -52,6 +57,15 @@ public:
 
 	void set_layer_mask(uint32_t p_mask);
 	uint32_t get_layer_mask() const;
+
+	void set_collision_mask(uint32_t p_mask);
+	uint32_t get_collision_mask() const;
+
+	void set_layer_mask_bit(int p_bit, bool p_value);
+	bool get_layer_mask_bit(int p_bit) const;
+
+	void set_collision_mask_bit(int p_bit, bool p_value);
+	bool get_collision_mask_bit(int p_bit) const;
 
 	void add_collision_exception_with(Node* p_node); //must be physicsbody
 	void remove_collision_exception_with(Node* p_node);
@@ -175,7 +189,7 @@ private:
 
 	struct ContactMonitor {
 
-
+		bool locked;
 		Map<ObjectID,BodyState> body_map;
 
 	};
@@ -304,7 +318,7 @@ public:
 	Vector3 move(const Vector3& p_motion);
 	Vector3 move_to(const Vector3& p_position);
 
-	bool can_move_to(const Vector3& p_position,bool p_discrete=false);
+	bool can_teleport_to(const Vector3& p_position);
 	bool is_colliding() const;
 	Vector3 get_collision_pos() const;
 	Vector3 get_collision_normal() const;

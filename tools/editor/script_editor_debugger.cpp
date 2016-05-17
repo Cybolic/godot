@@ -5,7 +5,7 @@
 /*                           GODOT ENGINE                                */
 /*                    http://www.godotengine.org                         */
 /*************************************************************************/
-/* Copyright (c) 2007-2015 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2007-2016 Juan Linietsky, Ariel Manzur.                 */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -169,6 +169,17 @@ void ScriptEditorDebugger::_scene_tree_request() {
 
 }
 
+void ScriptEditorDebugger::_video_mem_request() {
+
+	ERR_FAIL_COND(connection.is_null());
+	ERR_FAIL_COND(!connection->is_connected());
+
+	Array msg;
+	msg.push_back("request_video_mem");
+	ppeer->put_var(msg);
+
+}
+
 Size2 ScriptEditorDebugger::get_minimum_size() const {
 
 	Size2 ms = Control::get_minimum_size();
@@ -198,6 +209,8 @@ void ScriptEditorDebugger::_parse_message(const String& p_msg,const Array& p_dat
 		emit_signal("breaked",true,can_continue);
 		OS::get_singleton()->move_window_to_foreground();
 		tabs->set_current_tab(0);
+
+		EditorNode::get_singleton()->make_bottom_panel_item_visible(this);
 
 	} else if (p_msg=="debug_exit") {
 
@@ -243,6 +256,31 @@ void ScriptEditorDebugger::_parse_message(const String& p_msg,const Array& p_dat
 
 		le_clear->set_disabled(false);
 		le_set->set_disabled(false);
+
+	} else if (p_msg=="message:video_mem") {
+
+		vmem_tree->clear();
+		TreeItem* root=vmem_tree->create_item();
+
+		int total=0;
+
+		for(int i=0;i<p_data.size();i+=4) {
+
+			TreeItem *it = vmem_tree->create_item(root);
+			String type=p_data[i+1];
+			int bytes=p_data[i+3].operator int();
+			it->set_text(0,p_data[i+0]); //path
+			it->set_text(1,type); //type
+			it->set_text(2,p_data[i+2]); //type
+			it->set_text(3,String::humanize_size(bytes)); //type
+			total+=bytes;
+
+			if (has_icon(type,"EditorIcons"))
+				it->set_icon(0,get_icon(type,"EditorIcons"));
+		}
+
+		vmem_total->set_tooltip(TTR("Bytes: ")+itos(total));
+		vmem_total->set_text(String::humanize_size(total));
 
 	} else if (p_msg=="stack_dump") {
 
@@ -322,7 +360,9 @@ void ScriptEditorDebugger::_parse_message(const String& p_msg,const Array& p_dat
 
 			if (EditorNode::get_log()->is_hidden()) {
 				log_forced_visible=true;
-				EditorNode::get_log()->show();
+				if (EditorNode::get_singleton()->are_bottom_panels_hidden()) {
+					EditorNode::get_singleton()->make_bottom_panel_item_visible(EditorNode::get_log());
+				}
 			}
 			EditorNode::get_log()->add_message(t);
 
@@ -359,7 +399,7 @@ void ScriptEditorDebugger::_parse_message(const String& p_msg,const Array& p_dat
 		String time = String("%d:%02d:%02d:%04d").sprintf(vals,&e);
 		String txt=time+" - "+String(err[8]);
 
-		String tooltip="Type:"+String(warning?"Warning":"Error");
+		String tooltip=TTR("Type:")+String(warning?"Warning":"Error");
 		tooltip+="\nDescription: "+String(err[8]);
 		tooltip+="\nTime: "+time;
 		tooltip+="\nC Error: "+String(err[7]);
@@ -492,20 +532,20 @@ void ScriptEditorDebugger::_notification(int p_what) {
 
 		case NOTIFICATION_ENTER_TREE: {
 
+			inspector->edit(variables);
+
 			step->set_icon( get_icon("DebugStep","EditorIcons"));
 			next->set_icon( get_icon("DebugNext","EditorIcons"));
 			back->set_icon( get_icon("Back","EditorIcons"));
 			forward->set_icon( get_icon("Forward","EditorIcons"));
 			dobreak->set_icon( get_icon("Pause","EditorIcons"));
 			docontinue->set_icon( get_icon("DebugContinue","EditorIcons"));
-			tb->set_normal_texture( get_icon("Close","EditorIcons"));
-			tb->set_hover_texture( get_icon("CloseHover","EditorIcons"));
-			tb->set_pressed_texture( get_icon("Close","EditorIcons"));
 			scene_tree_refresh->set_icon( get_icon("Reload","EditorIcons"));
 			le_set->connect("pressed",this,"_live_edit_set");
 			le_clear->connect("pressed",this,"_live_edit_clear");
 			error_list->connect("item_selected",this,"_error_selected");
 			error_stack->connect("item_selected",this,"_error_stack_selected");
+			vmem_refresh->set_icon( get_icon("Reload","EditorIcons"));
 
 		} break;
 		case NOTIFICATION_PROCESS: {
@@ -513,9 +553,15 @@ void ScriptEditorDebugger::_notification(int p_what) {
 			if (error_count!=last_error_count) {
 
 				if (error_count==0) {
-					error_split->set_name("Errors");
+					error_split->set_name(TTR("Errors"));
+					debugger_button->set_text(TTR("Debugger"));
+					debugger_button->set_icon(Ref<Texture>());
+					tabs->set_tab_icon(error_split->get_index(),Ref<Texture>());
 				} else {
-					error_split->set_name("Errors ("+itos(error_count)+")");
+					error_split->set_name(TTR("Errors (")+itos(error_count)+")");
+					debugger_button->set_text(TTR("Debugger (")+itos(error_count)+")");
+					debugger_button->set_icon(get_icon("Error","EditorIcons"));
+					tabs->set_tab_icon(error_split->get_index(),get_icon("Error","EditorIcons"));
 				}
 				last_error_count=error_count;
 			}
@@ -532,14 +578,14 @@ void ScriptEditorDebugger::_notification(int p_what) {
 
 					ppeer->set_stream_peer(connection);
 
+					//EditorNode::get_singleton()->make_bottom_panel_item_visible(this);
+					//emit_signal("show_debugger",true);
 
-					show();
 					dobreak->set_disabled(false);
 					tabs->set_current_tab(0);
 
-					emit_signal("show_debugger",true);
-					reason->set_text("Child Process Connected");
-					reason->set_tooltip("Child Process Connected");
+					reason->set_text(TTR("Child Process Connected"));
+					reason->set_tooltip(TTR("Child Process Connected"));
 					scene_tree->clear();
 					le_set->set_disabled(true);
 					le_clear->set_disabled(false);
@@ -690,7 +736,9 @@ void ScriptEditorDebugger::stop(){
 	message.clear();
 
 	if (log_forced_visible) {
-		EditorNode::get_log()->hide();
+		//EditorNode::get_singleton()->make_bottom_panel_item_visible(this);
+		if (EditorNode::get_log()->is_visible())
+			EditorNode::get_singleton()->hide_bottom_panel();
 		log_forced_visible=false;
 	}
 
@@ -700,8 +748,11 @@ void ScriptEditorDebugger::stop(){
 	le_set->set_disabled(true);
 
 
-	hide();
-	emit_signal("show_debugger",false);
+	if (hide_on_stop) {
+		if (is_visible())
+			EditorNode::get_singleton()->hide_bottom_panel();
+		emit_signal("show_debugger",false);
+	}
 
 }
 
@@ -726,13 +777,6 @@ void ScriptEditorDebugger::_stack_dump_frame_selected() {
 	msg.push_back("get_stack_frame_vars");
 	msg.push_back(d["frame"]);
 	ppeer->put_var(msg);
-
-}
-
-void ScriptEditorDebugger::_hide_request() {
-
-	hide();
-	emit_signal("show_debugger",false);
 
 }
 
@@ -1107,7 +1151,7 @@ void ScriptEditorDebugger::_error_selected(int p_idx) {
 
 		error_stack->add_item(str);
 		error_stack->set_item_metadata(error_stack->get_item_count()-1,md);
-		error_stack->set_item_tooltip(error_stack->get_item_count()-1,"File: "+String(st[i])+"\nLine: "+itos(line));
+		error_stack->set_item_tooltip(error_stack->get_item_count()-1,TTR("File: ")+String(st[i])+"\nLine: "+itos(line));
 	}
 }
 
@@ -1123,6 +1167,10 @@ void ScriptEditorDebugger:: _error_stack_selected(int p_idx){
 
 }
 
+void ScriptEditorDebugger::set_hide_on_stop(bool p_hide) {
+
+	hide_on_stop=p_hide;
+}
 
 void ScriptEditorDebugger::_bind_methods() {
 
@@ -1132,10 +1180,10 @@ void ScriptEditorDebugger::_bind_methods() {
 	ObjectTypeDB::bind_method(_MD("debug_break"),&ScriptEditorDebugger::debug_break);
 	ObjectTypeDB::bind_method(_MD("debug_continue"),&ScriptEditorDebugger::debug_continue);
 	ObjectTypeDB::bind_method(_MD("_output_clear"),&ScriptEditorDebugger::_output_clear);
-	ObjectTypeDB::bind_method(_MD("_hide_request"),&ScriptEditorDebugger::_hide_request);
 	ObjectTypeDB::bind_method(_MD("_performance_draw"),&ScriptEditorDebugger::_performance_draw);
 	ObjectTypeDB::bind_method(_MD("_performance_select"),&ScriptEditorDebugger::_performance_select);
 	ObjectTypeDB::bind_method(_MD("_scene_tree_request"),&ScriptEditorDebugger::_scene_tree_request);
+	ObjectTypeDB::bind_method(_MD("_video_mem_request"),&ScriptEditorDebugger::_video_mem_request);
 	ObjectTypeDB::bind_method(_MD("_live_edit_set"),&ScriptEditorDebugger::_live_edit_set);
 	ObjectTypeDB::bind_method(_MD("_live_edit_clear"),&ScriptEditorDebugger::_live_edit_clear);
 
@@ -1151,7 +1199,7 @@ void ScriptEditorDebugger::_bind_methods() {
 	ObjectTypeDB::bind_method(_MD("live_debug_reparent_node"),&ScriptEditorDebugger::live_debug_reparent_node);
 
 	ADD_SIGNAL(MethodInfo("goto_script_line"));
-	ADD_SIGNAL(MethodInfo("breaked",PropertyInfo(Variant::BOOL,"reallydid")));
+	ADD_SIGNAL(MethodInfo("breaked",PropertyInfo(Variant::BOOL,"reallydid"),PropertyInfo(Variant::BOOL,"can_debug")));
 	ADD_SIGNAL(MethodInfo("show_debugger",PropertyInfo(Variant::BOOL,"reallydid")));
 }
 
@@ -1167,16 +1215,9 @@ ScriptEditorDebugger::ScriptEditorDebugger(EditorNode *p_editor){
 	tabs->set_area_as_parent_rect();
 	add_child(tabs);
 
-	tb = memnew( TextureButton );
-	tb->connect("pressed",this,"_hide_request");
-	tb->set_anchor_and_margin(MARGIN_LEFT,ANCHOR_END,20);
-	tb->set_margin(MARGIN_TOP,2);
-	add_child(tb);
-
-
 
 	VBoxContainer *vbc = memnew( VBoxContainer );
-	vbc->set_name("Debugger");
+	vbc->set_name(TTR("Debugger"));
 	//tabs->add_child(vbc);
 	Control *dbg=vbc;
 
@@ -1184,46 +1225,47 @@ ScriptEditorDebugger::ScriptEditorDebugger(EditorNode *p_editor){
 	vbc->add_child(hbc);
 
 
-	reason = memnew( Label );
+	reason = memnew( LineEdit );
 	reason->set_text("");
+	reason->set_editable(false);
 	hbc->add_child(reason);
 	reason->add_color_override("font_color",Color(1,0.4,0.0,0.8));
 	reason->set_h_size_flags(SIZE_EXPAND_FILL);
-	reason->set_clip_text(true);
+	//reason->set_clip_text(true);
 
 	hbc->add_child( memnew( VSeparator) );
 
 	step = memnew( Button );
 	hbc->add_child(step);
-	step->set_tooltip("Step Into");
+	step->set_tooltip(TTR("Step Into"));
 	step->connect("pressed",this,"debug_step");
 
 	next = memnew( Button );
 	hbc->add_child(next);
-	next->set_tooltip("Step Over");
+	next->set_tooltip(TTR("Step Over"));
 	next->connect("pressed",this,"debug_next");
 
 	hbc->add_child( memnew( VSeparator) );
 
 	dobreak = memnew( Button );
 	hbc->add_child(dobreak);
-	dobreak->set_tooltip("Break");
+	dobreak->set_tooltip(TTR("Break"));
 	dobreak->connect("pressed",this,"debug_break");
 
 	docontinue = memnew( Button );
 	hbc->add_child(docontinue);
-	docontinue->set_tooltip("Continue");
+	docontinue->set_tooltip(TTR("Continue"));
 	docontinue->connect("pressed",this,"debug_continue");
 
 	hbc->add_child( memnew( VSeparator) );
 
 	back = memnew( Button );
 	hbc->add_child(back);
-	back->set_tooltip("Inspect Previous Instance");
+	back->set_tooltip(TTR("Inspect Previous Instance"));
 
 	forward = memnew( Button );
 	hbc->add_child(forward);
-	back->set_tooltip("Inspect Next Instance");
+	back->set_tooltip(TTR("Inspect Next Instance"));
 
 
 	HSplitContainer *sc = memnew( HSplitContainer );
@@ -1233,7 +1275,7 @@ ScriptEditorDebugger::ScriptEditorDebugger(EditorNode *p_editor){
 	stack_dump = memnew( Tree );
 	stack_dump->set_columns(1);
 	stack_dump->set_column_titles_visible(true);
-	stack_dump->set_column_title(0,"Stack Frames");
+	stack_dump->set_column_title(0,TTR("Stack Frames"));
 	stack_dump->set_h_size_flags(SIZE_EXPAND_FILL);
 	stack_dump->set_hide_root(true);
 	stack_dump->connect("cell_selected",this,"_stack_dump_frame_selected");
@@ -1242,7 +1284,7 @@ ScriptEditorDebugger::ScriptEditorDebugger(EditorNode *p_editor){
 	inspector = memnew( PropertyEditor );
 	inspector->set_h_size_flags(SIZE_EXPAND_FILL);
 	inspector->hide_top_label();
-	inspector->get_scene_tree()->set_column_title(0,"Variable");
+	inspector->get_scene_tree()->set_column_title(0,TTR("Variable"));
 	inspector->set_capitalize_paths(false);
 	inspector->set_read_only(true);
 	sc->add_child(inspector);
@@ -1252,7 +1294,7 @@ ScriptEditorDebugger::ScriptEditorDebugger(EditorNode *p_editor){
 	pending_in_queue=0;
 
 	variables = memnew( ScriptEditorDebuggerVariables );
-	inspector->edit(variables);
+
 	breaked=false;
 
 	tabs->add_child(dbg);
@@ -1266,16 +1308,16 @@ ScriptEditorDebugger::ScriptEditorDebugger(EditorNode *p_editor){
 	VBoxContainer *errvb = memnew( VBoxContainer );
 	errvb->set_h_size_flags(SIZE_EXPAND_FILL);
 	error_list = memnew( ItemList );
-	errvb->add_margin_child("Errors:",error_list,true);
+	errvb->add_margin_child(TTR("Errors:"),error_list,true);
 	error_split->add_child(errvb);
 
 	errvb = memnew( VBoxContainer );
 	errvb->set_h_size_flags(SIZE_EXPAND_FILL);
 	error_stack = memnew( ItemList );
-	errvb->add_margin_child("Stack Trace (if applies):",error_stack,true);
+	errvb->add_margin_child(TTR("Stack Trace (if applies):"),error_stack,true);
 	error_split->add_child(errvb);
 
-	error_split->set_name("Errors");
+	error_split->set_name(TTR("Errors"));
 	tabs->add_child(error_split);
 
 
@@ -1283,8 +1325,8 @@ ScriptEditorDebugger::ScriptEditorDebugger(EditorNode *p_editor){
 
 	perf_monitors = memnew(Tree);
 	perf_monitors->set_columns(2);
-	perf_monitors->set_column_title(0,"Monitor");
-	perf_monitors->set_column_title(1,"Value");
+	perf_monitors->set_column_title(0,TTR("Monitor"));
+	perf_monitors->set_column_title(1,TTR("Value"));
 	perf_monitors->set_column_titles_visible(true);
 	hsp->add_child(perf_monitors);
 	perf_monitors->set_select_mode(Tree::SELECT_MULTI);
@@ -1322,28 +1364,69 @@ ScriptEditorDebugger::ScriptEditorDebugger(EditorNode *p_editor){
 
 	}
 
+	VBoxContainer *vmem_vb = memnew( VBoxContainer );
+	HBoxContainer *vmem_hb = memnew( HBoxContainer );
+	Label *vmlb = memnew(Label(TTR("List of Video Memory Usage by Resource: ")) );
+	vmlb->set_h_size_flags(SIZE_EXPAND_FILL);
+	vmem_hb->add_child( vmlb );
+	vmem_hb->add_child( memnew(Label(TTR("Total: "))) );
+	vmem_total = memnew( LineEdit );
+	vmem_total->set_editable(false);
+	vmem_total->set_custom_minimum_size(Size2(100,1));
+	vmem_hb->add_child(vmem_total);
+	vmem_refresh = memnew( Button );
+	vmem_hb->add_child(vmem_refresh);
+	vmem_vb->add_child(vmem_hb);
+	vmem_refresh->connect("pressed",this,"_video_mem_request");
+
+	MarginContainer *vmmc = memnew( MarginContainer );
+	vmem_tree = memnew( Tree );
+	vmem_tree->set_v_size_flags(SIZE_EXPAND_FILL);
+	vmem_tree->set_h_size_flags(SIZE_EXPAND_FILL);
+	vmmc->add_child(vmem_tree);
+	vmmc->set_v_size_flags(SIZE_EXPAND_FILL);
+	vmem_vb->add_child(vmmc);
+
+	vmem_vb->set_name(TTR("Video Mem"));
+	vmem_tree->set_columns(4);
+	vmem_tree->set_column_titles_visible(true);
+	vmem_tree->set_column_title(0,TTR("Resource Path"));
+	vmem_tree->set_column_expand(0,true);
+	vmem_tree->set_column_expand(1,false);
+	vmem_tree->set_column_title(1,TTR("Type"));
+	vmem_tree->set_column_min_width(1,100);
+	vmem_tree->set_column_expand(2,false);
+	vmem_tree->set_column_title(2,TTR("Format"));
+	vmem_tree->set_column_min_width(2,150);
+	vmem_tree->set_column_expand(3,false);
+	vmem_tree->set_column_title(3,TTR("Usage"));
+	vmem_tree->set_column_min_width(3,80);
+	vmem_tree->set_hide_root(true);
+
+	tabs->add_child(vmem_vb);
+
 	info = memnew( HSplitContainer );
-	info->set_name("Info");
+	info->set_name(TTR("Info"));
 	tabs->add_child(info);
 
 	VBoxContainer *info_left = memnew( VBoxContainer );
 	info_left->set_h_size_flags(SIZE_EXPAND_FILL);
 	info->add_child(info_left);
 	clicked_ctrl = memnew( LineEdit );
-	info_left->add_margin_child("Clicked Control:",clicked_ctrl);
+	info_left->add_margin_child(TTR("Clicked Control:"),clicked_ctrl);
 	clicked_ctrl_type = memnew( LineEdit );
-	info_left->add_margin_child("Clicked Control Type:",clicked_ctrl_type);
+	info_left->add_margin_child(TTR("Clicked Control Type:"),clicked_ctrl_type);
 
 	live_edit_root = memnew( LineEdit );
 
 	{
 		HBoxContainer *lehb = memnew( HBoxContainer );
-		Label *l = memnew( Label("Live Edit Root:") );
+		Label *l = memnew( Label(TTR("Live Edit Root:")) );
 		lehb->add_child(l);
 		l->set_h_size_flags(SIZE_EXPAND_FILL);
-		le_set = memnew( Button("Set From Tree") );
+		le_set = memnew( Button(TTR("Set From Tree")) );
 		lehb->add_child(le_set);
-		le_clear = memnew( Button("Clear") );
+		le_clear = memnew( Button(TTR("Clear")) );
 		lehb->add_child(le_clear);
 		info_left->add_child(lehb);
 		MarginContainer *mc = memnew( MarginContainer );
@@ -1358,7 +1441,7 @@ ScriptEditorDebugger::ScriptEditorDebugger(EditorNode *p_editor){
 	info->add_child(info_right);
 	HBoxContainer *inforhb = memnew( HBoxContainer );
 	info_right->add_child(inforhb);
-	Label *l2 = memnew( Label("Scene Tree:" ) );
+	Label *l2 = memnew( Label(TTR("Scene Tree:") ) );
 	l2->set_h_size_flags(SIZE_EXPAND_FILL);
 	inforhb->add_child( l2 );
 	Button *refresh = memnew( Button );
@@ -1375,7 +1458,6 @@ ScriptEditorDebugger::ScriptEditorDebugger(EditorNode *p_editor){
 	msgdialog = memnew( AcceptDialog );
 	add_child(msgdialog);
 
-	hide();
 	log_forced_visible=false;
 
 	p_editor->get_undo_redo()->set_method_notify_callback(_method_changeds,this);
@@ -1383,6 +1465,7 @@ ScriptEditorDebugger::ScriptEditorDebugger(EditorNode *p_editor){
 	live_debug=false;
 	last_path_id=false;
 	error_count=0;
+	hide_on_stop=true;
 	last_error_count=0;
 
 
